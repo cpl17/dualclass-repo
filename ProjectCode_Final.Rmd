@@ -1,0 +1,632 @@
+---
+title: "2nd Proposal"
+author: "Charles Leahan"
+date: "11/19/2019"
+output: word_document
+---
+# Background
+
+After a preliminary overview of the tidyquant package, specifically the FANG dataset, we noticed two steep dips in Google and Netflix shares. Such a phenomenon is the result of a stock split, where a successful firm, looking to increase liquidity and expand the pool of potential investors, dramatically increases share volume. Consequentially, the share price is now a fraction of its pre-split amount and, therefore, more available to the average investor. An additional intention of these splits is the redistribution of voting rights among shareholders through initiating dual or multiple class structures. Here, each restricted share (Class A) holds multiple votes to the non-restricted share’s one - typically 10-1. The purpose of the unequal voting structure is to allow the firms “concentrated controllers” to effectively govern without shareholder interference.
+
+Dual Class structures are a relatively new market practice and have been heavily adopted by tech firms with “unicorn” founders who don’t want outsiders tampering with their vision. As a result, the characteristics of the board and the ability of the executives are even stronger determinants of success. Meanwhile, traditional investors have much less enthusiasm towards these types of shares, claiming that the unequal structure exacerbates existing principal-agent problems and is leads to amoral corporate governance.
+
+With this in mind, we intend on first observing the prevalence of dual class structure across different sectors. We hope to establish representative groups - across industries, size and other relevant characteristics - of firms with traditional or dual class structures. After categorizing, we plan on observing past and predicting future success across structures.
+
+
+Here I used data from the Council of Institutional Investors, which collected all the companies listed on the Russel 3000, whose market cap was greater than $200 million dollars, with uneven voting structures. Too ease future data management, all companies with multiple classes - ie Class A,B,C - were either not considered or only their class A stock's performance was included. It was necessary to do so because "symbol" was the key used to join tables and companies with multiple symbols (classes) were not being included.
+
+```{r, message = FALSE}
+
+library(readr)
+
+#Dual Class Structures of Companies in Russel 3000 with Market Cap > 200 million
+
+DCS <- read_csv("C:/Users/CPL17/OneDrive/Desktop/CleanDSCcompanies.csv",col_names = TRUE)
+
+```
+
+
+# Creating Table of All Relevant Companies 
+
+Then, I gathered all companies on the New York Stock Exchange and those listed on NASDAQ. The relevant variables from each table are the companies symbol, market capitalization, and their sector. These tables were then joined with the Dual Class Structure table to deteremine which companies in each group had uneven class structures. Each table was arranged by sector for ease of data management. Then, all companies with non-billion market capitalizations were removed to ensure that if they had uneven structures, they would be on the Council of Institutional Investors list. The market cap varaible was then coerced to a numeric variable, some cosmetic changes were made and the relevant variables were selected. 
+
+After this process, each table contains all the companies with billion dollar market shares, arranged by sector/market.cap, with an indicate of their structure.  The wedge variable is the percent difference in voting share to equity share. This variable is not used in analysis but can be if you're bored. 
+
+
+Then, with the intention of combining the two tables, I checked for any overlap. Then,  I took the union of the tables and filtered out observations that were not in the overlap - after creating a function that does the latter action. The final table of all companies to be observed containes all the previously mentioned variables studied across 2258 companies. 
+
+```{r, message= FALSE}
+
+library(tidyquant)
+library(tidyverse)
+
+#NYSE Comapnies
+
+NYSE <- tq_exchange("NYSE")
+
+#NYSE Companies (with structure variable
+
+NYSE.Table2 <- left_join(NYSE,DCS, by = "symbol") %>% 
+  arrange(sector) %>% 
+  filter(str_detect(market.cap, "B$")) %>% 
+  mutate(market.cap = str_remove_all(market.cap, "[$B]")) %>% 
+  mutate(market.cap = as.numeric(market.cap)) %>% 
+  mutate(structure = ifelse(is.na(wedge), "EVEN", "UNEVEN")) %>% 
+  arrange(sector,desc(market.cap)) %>% 
+  rename(company = company.x) %>% 
+  select(symbol, company,market.cap,sector,wedge,structure)
+
+
+#NASDAQ Master
+
+NASDAQ.Table <- tq_exchange("NASDAQ")
+
+#NASDAQ Master (Clean and Structure Included)
+
+NASDAQ.Table2 <- left_join(NASDAQ.Table,DCS, by = "symbol") %>% 
+  arrange(sector) %>% 
+  filter(str_detect(market.cap, "B$")) %>% 
+  mutate(market.cap = str_remove_all(market.cap, "[$B]")) %>% 
+  mutate(market.cap = as.numeric(market.cap)) %>% 
+  mutate(structure = ifelse(is.na(wedge), "EVEN", "UNEVEN")) %>%
+  arrange(sector,desc(market.cap)) %>% 
+  rename(company = company.x) %>% 
+  select(symbol, company,market.cap,sector,wedge,structure)
+
+#Checking Overlapping Companies 
+
+symbol.NYSE <- NYSE.Table2$symbol
+symbol.NASDAQ <- NASDAQ.Table2$symbol
+
+overlap <- intersect(symbol.NASDAQ,symbol.NYSE)
+
+#Create function to filter all observations not in an object 
+
+'%!in%' <- function(x,y)!('%in%'(x,y))
+
+#Creating Table of Combined Companies
+
+Companies.Table.Full <- dplyr::union(NYSE.Table2,NASDAQ.Table2) %>% 
+  filter(symbol %!in% overlap) %>% 
+  filter(sector != "NA")
+
+
+```
+
+
+# Making Initial Observations 
+
+
+The first graphic plots the frequency of uneven to even class structures for each sector. It appears that the consumer services, technology, consumer non-durable and finance sectors all have the highest number of companies with uneven structures. 
+
+Then, the second graph illustrates the proportion of companies that have uneven structures in each sector. Not including the sectors already mentioned, consumer durables and miscellaneous have a high proportion of companies with an uneven structure.  
+
+```{r}
+
+#Repsective frequency of uneven structure by sector 
+
+
+Companies.Table.Full %>% ggplot() + 
+  geom_bar(aes(sector,fill = structure)) + 
+  theme(axis.text.x = element_text(angle = 90)) + 
+  ggtitle("Relative Frequency of Even and Uneven Class Structures") +
+  ylab("") + xlab("")
+
+#Proportion
+
+Companies.Table.Full %>% group_by(sector,structure) %>% 
+  summarize(N=n()) %>%  mutate(prop = N/sum(N)) %>% 
+  filter(structure == "UNEVEN") %>% 
+  ggplot(aes(sector,prop)) + 
+  geom_bar(stat = "identity", fill = "#00BFC4") + 
+  ylab("") + xlab("") + 
+  theme(axis.text.x = element_text(angle = 90)) + ggtitle("Proportion of Companies with Uneven Stucture by Sector")
+
+#Average Wedge
+
+Companies.Table.Full %>% filter(structure == "UNEVEN") %>% 
+  group_by(sector) %>% 
+  summarize(mean.wedge = mean(wedge)) %>% 
+  ggplot(aes(sector,mean.wedge)) + geom_bar(stat = "identity", fill = "#00BFC4") + 
+  ylab("") + xlab("") + 
+  theme(axis.text.x = element_text(angle = 90)) + ggtitle("Average Wedge") + ylim(c(0,.7))
+
+```
+
+
+# Finalized Table of Companies 
+
+Since some sectors from our data set have few companies with uneven class structure, we limit our discussion to the Consumer Durables, Non-Durables, Consumer Services, Finance, Miscillaneous and Technology sectors. This table contains measures of the relevant variables across 1346 companies. 
+
+
+```{r}
+
+#Create Finalized Table of Companies
+
+Companies.Table.Red <- Companies.Table.Full %>% 
+  filter(sector %in% c("Consumer Durables","Consumer Non-Durables", "Consumer Services", "Finance" , "Miscellaneous", "Technology" ))
+
+
+```
+
+
+# Some Initial Observations 
+
+Suggestion - include  a discussion of the first three sectors (what the hell is consumer services). Also, see what companies are the outliers in each sector. The table is arranged by market cap so filtering by sector will do the trick. 
+
+The below table illustrates the distribution of market capitalization (volume * closing stock price) by sector. Log billion units were used because of the outliers - the plots were uninterpretable. 
+
+Most of the medians are roughly each, outside of CND and M (higher for uneven) and Finance (higher for Even). If using Market Capitalization as a measure of success, it's unclear class structure matters. 
+
+```{r}
+
+#Observe Relative Market Capitalization 
+
+ggplot(Companies.Table.Red) + geom_boxplot(aes(structure,log(market.cap), color = structure)) + theme(axis.text.x = element_text(angle = 90)) + ggtitle("Market Capitalization at 12/30/18") + facet_wrap(~sector) + ylab("(Log Units)") + xlab("")
+
+```
+
+# Create Final Table of Companies 
+
+Now, for computational ease and measurement accuracy, each sector was reduced to two equally numbered groups of companies. First, I found the number of companies with an uneven structure and then took an equal number of randomly sampled companies (with even structure) from each sector. Afters, I used rbind to combine the new even observations and unioned this with a filtered version of the orignal companies.
+
+Note, after looking at everyone's results it was necessary to do this. There were sectors with few or no dual class structures and thus not includable in this anlaysis. 
+
+Now, this is the final table of companies. 
+
+There are measures of the 6 relevant variables across 245 companies. 
+
+
+
+
+```{r}
+
+#Finding Number of Observation of Uneven Structures in each sector
+
+num.CDU <- as.numeric(Companies.Table.Red %>% filter(sector == "Consumer Durables" & structure == "UNEVEN") %>% summarize(n = n()))
+num.CNDU <- as.numeric(Companies.Table.Red %>% filter(sector == "Consumer Non-Durables" & structure == "UNEVEN") %>% summarize(n = n()))
+num.CSU <- as.numeric(Companies.Table.Red %>% filter(sector == "Consumer Services" & structure =="UNEVEN") %>% summarize(n = n()))
+num.FU <- as.numeric(Companies.Table.Red %>% filter(sector == "Finance" & structure =="UNEVEN") %>% summarize(n = n()))
+num.MU <- as.numeric(Companies.Table.Red %>% filter(sector == "Miscellaneous" & structure =="UNEVEN") %>% summarize(n = n()))
+num.TU <- as.numeric(Companies.Table.Red %>% filter(sector == "Technology" & structure =="UNEVEN") %>% summarize(n = n()))
+
+#Sample Equivalent Number of Evenly Structured Companies in Each Sector
+
+CD.Even <- Companies.Table.Red %>%  filter(sector == "Consumer Durables" & structure == "EVEN") %>% sample_n(as.numeric(num.CDU))
+CND.Even <- Companies.Table.Red %>% filter(sector == "Consumer Non-Durables" & structure == "EVEN") %>%  sample_n(as.numeric(num.CNDU))
+CS.Even <- Companies.Table.Red %>%  filter(sector == "Consumer Services" & structure == "EVEN") %>% sample_n(as.numeric(num.CSU))
+Fin.Even <- Companies.Table.Red %>% filter(sector == "Finance" & structure == "EVEN") %>%sample_n(as.numeric(num.FU))
+Misc.Even <- Companies.Table.Red %>% filter(sector == "Miscellaneous" & structure == "EVEN") %>% sample_n(as.numeric(num.MU))
+Tech.Even <- Companies.Table.Red %>% filter(sector == "Technology" & structure == "EVEN") %>% sample_n(as.numeric(num.TU))
+
+#Create New Data Frame of Sample Even companies
+
+Even.New <- rbind(CD.Even,CND.Even,CS.Even,Fin.Even,Misc.Even,Tech.Even)
+
+#Number of Even Companies (1/2 # of total companies)
+nrow(Even.New)
+
+
+Companies.Table.Final <- Companies.Table.Red %>% 
+  filter(structure == "UNEVEN") %>% 
+  dplyr::union(Even.New)
+
+
+
+
+
+```
+
+# Getting Stock Prices 
+
+Here, because tq_get takes a character vector of symbols as its object, I created such a vector with the symbols of the companies in the final table. SP is tibble containing the opening, average and closing stock prices of all 245 companies from the beginning of 2004 till the end of 2018. 
+
+There are (insert number) observations in this table so it takes a while to process. 
+
+Next, I joined it with the companies table so all relevent variables and observation are now in one place. 
+
+
+```{r, message=FALSE, warning = FALSE}
+
+Companies <- unique(Companies.Table.Final$symbol)
+
+# Find Total stock prices (LONG)
+
+SP <- Companies %>% 
+  tq_get(
+    get = "stock.prices",
+    from = "2004-01-01",
+    to = "2018-12-30") 
+
+
+#Join Tables
+
+Full.Table <- left_join(SP,Companies.Table.Final, by = "symbol") 
+
+#Number of Observations
+nrow(Full.Table)
+
+```
+
+Note, tq_get() gathers stock prices from yahoo finance. Unfortunately, some stock prices from the companies in our table no longer are available. However, the following tables indicate that there are still roughly the same amount of companies in each group. 
+
+```{r}
+
+#Number of companies whose prices no longer available
+
+n_distinct(Full.Table$symbol)
+
+#Observing number of companies in each sector by structure
+
+Full.Table %>% filter(structure == "UNEVEN") %>% group_by(sector) %>% summarise(n_distinct(symbol))
+Full.Table %>% filter(structure == "EVEN") %>% group_by(sector) %>% summarise(n_distinct(symbol))
+```
+
+
+# Calculating Returns (By Structure)
+
+Here I used tq_transmute() to calculate monthly returns by strcuture. I filtered out the observations for the first dat because there must have been some start up problems with tq_transmute() that resulted in the returns to be close to 10 time higher than normal. 
+
+It was necessary to creat tables for even and dual and then join them because tq_transmute() only returns the date and the calculation one requests. So, created a narrow table with gather the uneven and even returns. Then, I removed the returns pattern in the string so that the structure variables is in its obvious form. 
+
+
+
+```{r, warning= FALSE}
+
+# Find Returns by Class Structure
+
+Total.Returns.Even <- Full.Table %>% 
+  filter(structure == "EVEN") %>% 
+  tq_transmute(adjusted,periodReturn,period = "monthly",col_rename = "returns.EVEN") %>% 
+  filter(date != "2004-01-30")
+
+Total.Returns.Dual <- Full.Table %>% 
+  filter(structure == "UNEVEN") %>% 
+  tq_transmute(adjusted,periodReturn,period = "monthly",col_rename = "returns.UNEVEN") %>% 
+  filter(date != "2004-01-30")
+
+# Join Tables
+
+Total.Returns <- left_join(Total.Returns.Dual,Total.Returns.Even, by = "date") %>% 
+  gather(key = "structure",value = "returns",2:3) %>% 
+  mutate(Structure = sub(pattern = "returns.", replacement = "", x = structure)) %>% 
+  select(-structure)
+  
+
+```
+
+
+# Calculating Returns (By structure and sector)
+
+Here, I repeated the process above, while filtering for each sector. 
+
+```{r, warning=FALSE}
+
+
+#Consumer Durable Returns 
+
+CD.MR.Even <- Full.Table %>% filter(structure == "EVEN" & sector == "Consumer Durables") %>% tq_transmute(adjusted,periodReturn,period = "monthly",col_rename = "returns.EVEN") %>% filter(date != "2004-01-30")
+
+CD.MR.Dual <- Full.Table %>% filter(structure == "UNEVEN" & sector == "Consumer Durables") %>% tq_transmute(adjusted,periodReturn,period = "monthly",col_rename = "returns.UNEVEN") %>% filter(date != "2004-01-30")
+
+##Joined Table
+
+CD.Returns <- left_join(CD.MR.Dual,CD.MR.Even, by = "date") %>% gather(key = "structure",value = "returns",2:3) %>% mutate(Structure = sub(pattern = "returns.", replacement = "", x = structure)) %>% select(-structure)
+
+
+
+  
+#Consumer Non-Durable Returns 
+
+CND.MR.Even <- Full.Table %>% filter(structure == "EVEN" & sector == "Consumer Non-Durables") %>% tq_transmute(adjusted,periodReturn,period = "monthly",col_rename = "returns.EVEN") %>% filter(date != "2004-01-30")
+
+CND.MR.Dual <- Full.Table %>% filter(structure == "UNEVEN" & sector == "Consumer Non-Durables") %>% tq_transmute(adjusted,periodReturn,period = "monthly",col_rename = "returns.UNEVEN") %>% filter(date != "2004-01-30")
+
+##Joined Table
+
+CND.Returns <- left_join(CND.MR.Dual,CND.MR.Even, by = "date") %>% gather(key = "structure",value = "returns",2:3) %>% mutate(Structure = sub(pattern = "returns.", replacement = "", x = structure)) %>% select(-structure)
+  
+
+
+
+#Consumer Services Returns 
+
+CS.MR.Even <- Full.Table %>% filter(structure == "EVEN" & sector == "Consumer Services") %>% tq_transmute(adjusted,periodReturn,period = "monthly",col_rename = "returns.EVEN") %>% filter(date != "2004-01-30") 
+
+CS.MR.Dual <- Full.Table %>% filter(structure == "UNEVEN" & sector == "Consumer Services") %>% tq_transmute(adjusted,periodReturn,period = "monthly",col_rename = "returns.UNEVEN") %>% filter(date != "2004-01-30")
+
+##Joined Tables
+
+CS.Returns <- left_join(CS.MR.Dual,CS.MR.Even, by = "date") %>% gather(key = "structure",value = "returns",2:3)  %>% mutate(Structure = sub(pattern = "returns.", replacement = "", x = structure)) %>% select(-structure)
+
+
+
+
+#Finance Returns
+
+F.MR.Even <- Full.Table %>% filter(structure == "EVEN" & sector == "Finance") %>% tq_transmute(adjusted,periodReturn,period = "monthly",col_rename = "returns.EVEN") %>% filter(date != "2004-01-30")
+
+F.MR.Dual <- Full.Table %>% filter(structure == "UNEVEN" & sector == "Finance") %>% tq_transmute(adjusted,periodReturn,period = "monthly",col_rename = "returns.UNEVEN") %>% filter(date != "2004-01-30")
+
+#Joined Tables
+
+F.Returns <- left_join(F.MR.Dual,F.MR.Even, by = "date") %>% gather(key = "structure",value = "returns",2:3) %>% mutate(Structure = sub(pattern = "returns.", replacement = "", x = structure)) %>% select(-structure)
+  
+
+
+
+#Miscellaneous Returns 
+
+M.MR.Even <- Full.Table %>% filter(structure == "EVEN" & sector == "Miscellaneous") %>% tq_transmute(adjusted,periodReturn,period = "monthly",col_rename = "returns.EVEN") %>% filter(date != "2004-01-30")
+
+M.MR.Dual <- Full.Table %>% filter(structure == "UNEVEN" & sector == "Miscellaneous") %>% tq_transmute(adjusted,periodReturn,period = "monthly",col_rename = "returns.UNEVEN") %>% filter(date != "2004-01-30")
+
+#Joined Tables
+
+M.Returns <- left_join(M.MR.Dual,M.MR.Even, by = "date") %>% gather(key = "structure",value = "returns",2:3) %>% mutate(Structure = sub(pattern = "returns.", replacement = "", x = structure)) %>% select(-structure)
+  
+
+
+
+#Technology Returns 
+
+Tech.MR.Even <- Full.Table %>% filter(structure == "EVEN" & sector == "Technology") %>% tq_transmute(adjusted,periodReturn,period = "monthly",col_rename = "returns.EVEN") %>% filter(date != "2004-01-30")
+
+Tech.MR.Dual <- Full.Table %>% filter(structure == "UNEVEN" & sector ==  "Technology") %>% tq_transmute(adjusted,periodReturn,period = "monthly",col_rename = "returns.UNEVEN") %>% filter(date != "2004-01-30")
+
+Tech.Returns <- left_join(Tech.MR.Dual,Tech.MR.Even, by = "date") %>% gather(key = "structure",value = "returns",2:3) %>%  mutate(Structure = sub(pattern = "returns.", replacement = "", x = structure)) %>% select(-structure)
+
+```
+
+
+
+
+# Plotting Returns 
+
+Suggestions- 
+
+Talk about overall volatility, spikes, trends etc. For example, in the combined returns plot, returns for the evenly structured companies have a lot of volatility early on (high spike followed by eqivalent dips). Or, observ the sectors that were effected by the recession. 
+
+Anything sort of fluff to fill the paper. 
+
+```{r}
+
+# By Structure
+
+ggplot(Total.Returns,aes(x = date,y = returns, color = Structure)) + geom_line() + ggtitle("Combined Returns") + ylim(c(-1,1)) + ylab("Monthly Returns %") + xlab("") + scale_x_date(date_labels = "%Y", date_breaks = "2 years")
+
+
+# By Sector
+
+par(mfrow = c(2,3))
+
+ggplot(CD.Returns,aes(x = date,y = returns, color = Structure)) + geom_line() + ggtitle("Consumer Durables") + ylim(c(-1,1)) + ylab("Monthly Returns %") + xlab("")+ scale_x_date(date_labels = "%Y", date_breaks = "2 years")
+
+ggplot(CND.Returns,aes(x = date,y = returns, color = Structure)) + geom_line() + ggtitle("Consumer Non- Durables") + ylim(c(-1,1)) + ylab("Monthly Returns %") +xlab("") + scale_x_date(date_labels = "%Y", date_breaks = "2 years")
+
+ggplot(CS.Returns,aes(x = date,y = returns, color = Structure)) + geom_line() + ggtitle("Consumer Services") + ylim(c(-1,1)) + ylab("Monthly Returns %") + xlab("") + scale_x_date(date_labels = "%Y", date_breaks = "2 years")
+
+ggplot(F.Returns,aes(x = date,y = returns, color = Structure)) + geom_line() + ggtitle("Finance") + ylim(c(-1,1)) + ylab("Monthly Returns %") + xlab("") + scale_x_date(date_labels = "%Y", date_breaks = "2 years")
+
+ggplot(M.Returns,aes(x = date,y = returns, color = Structure)) + geom_line() + ggtitle("Miscellaneous") + ylim(c(-1,1)) + ylab("Monthly Returns %") + xlab("") + scale_x_date(date_labels = "%Y", date_breaks = "2 years")
+
+ggplot(Tech.Returns,aes(x = date,y = returns, color = Structure)) + geom_line() + ggtitle("Technology") + ylim(c(-1,1)) + ylab("Monthly Returns %") + xlab("") + scale_x_date(date_labels = "%Y", date_breaks = "2 years")
+```
+
+# Create Mean Difference Table 
+
+Here, I created wide tables of returns so I could could take the difference at each date. 
+
+```{r}
+
+#Mean Difference 
+
+Wide.Total.Returns <- spread(Total.Returns,key = Structure, value = returns) %>% 
+  rename(Returns.E = EVEN, Returns.U = UNEVEN) %>% 
+  mutate(diff = Returns.E - Returns.U) %>% 
+  na.omit()
+
+
+Wide.CD.Returns <- spread(CD.Returns,key = Structure, value = returns) %>% 
+  rename(Returns.E = EVEN, Returns.U = UNEVEN) %>% 
+  mutate(diff = Returns.E - Returns.U) %>% 
+  na.omit()
+
+Wide.CND.Returns <- spread(CND.Returns,key = Structure, value = returns) %>% 
+  rename(Returns.E = EVEN, Returns.U = UNEVEN) %>% 
+  mutate(diff = Returns.E - Returns.U) %>% 
+  na.omit()
+
+Wide.CS.Returns <- spread(CS.Returns,key = Structure, value = returns) %>% 
+  rename(Returns.E = EVEN, Returns.U = UNEVEN) %>% 
+  mutate(diff = Returns.E - Returns.U) %>% 
+  na.omit()
+
+Wide.F.Returns <- spread(F.Returns,key = Structure, value = returns) %>% 
+  rename(Returns.E = EVEN, Returns.U = UNEVEN) %>% 
+  mutate(diff = Returns.E - Returns.U) %>% 
+  na.omit()
+
+Wide.M.Returns <- spread(M.Returns,key = Structure, value = returns) %>% 
+  rename(Returns.E = EVEN, Returns.U = UNEVEN) %>% 
+  mutate(diff = Returns.E - Returns.U) %>% 
+  na.omit()
+
+Wide.Tech.Returns <- spread(Tech.Returns,key = Structure, value = returns) %>% 
+  rename(Returns.E = EVEN, Returns.U = UNEVEN) %>% 
+  mutate(diff = Returns.E - Returns.U) %>% 
+  na.omit()
+
+
+```
+
+
+# Plot the Mean Difference 
+
+```{r}
+#Overall 
+
+library(grid)
+
+my_text <- "Positive difference indicates Even companies \n outperformed Uneven companies"
+my_grob = grid.text(my_text, x = .6, y = .1, gp=gpar(col="black", fontsize=8, fontface="bold"))
+
+
+ggplot(Wide.Total.Returns) + geom_line(aes(date,diff)) + geom_abline(slope = 0, intercept = mean(Wide.Total.Returns$diff), color = "red") + ggtitle("Combined") + ylim(c(-1,1)) + ylab("Monthly Difference in  Returns %") + xlab("Date") + scale_x_date(date_labels = "%Y", date_breaks = "2 years")  + annotation_custom(my_grob)
+
+
+
+#By Sector 
+
+ggplot(Wide.CD.Returns) + geom_line(aes(date,diff)) + geom_abline(slope = 0, intercept = mean(Wide.CD.Returns$diff), color = "red") + ggtitle("Consumer Durables") + ylim(c(-1,1)) + ylab("Monthly Difference in  Returns %") + xlab("") + scale_x_date(date_labels = "%Y", date_breaks = "2 years")  + xlab("")
+
+ggplot(Wide.CND.Returns) + geom_line(aes(date,diff)) + geom_abline(slope = 0, intercept = mean(Wide.CND.Returns$diff), color = "red") + ggtitle("Consumer Non-Durables") + ylim(c(-1,1)) + ylab("Monthly Difference in  Returns %") + xlab("") + scale_x_date(date_labels = "%Y", date_breaks = "2 years") + xlab("")
+
+ggplot(Wide.CS.Returns) + geom_line(aes(date,diff)) + geom_abline(slope = 0, intercept = mean(Wide.CS.Returns$diff), color = "red") + ggtitle("Consumer Services") + ylim(c(-1,1)) + ylab("Monthly Difference in  Returns %") + xlab("") + scale_x_date(date_labels = "%Y", date_breaks = "2 years") + xlab("")
+
+ggplot(Wide.F.Returns) + geom_line(aes(date,diff)) + geom_abline(slope = 0, intercept = mean(Wide.F.Returns$diff), color = "red") + ggtitle("Finance") + ylim(c(-1,1)) + ylab("Monthly Difference in  Returns %") + xlab("") + scale_x_date(date_labels = "%Y", date_breaks = "2 years") + xlab("")
+
+ggplot(Wide.M.Returns) + geom_line(aes(date,diff)) + geom_abline(slope = 0, intercept = mean(Wide.M.Returns$diff), color = "red") + ggtitle("Finance") + ylim(c(-1,1)) + ylab("Monthly Difference in  Returns %") + xlab("") + scale_x_date(date_labels = "%Y", date_breaks = "2 years") + xlab("")
+
+ggplot(Wide.Tech.Returns) + geom_line(aes(date,diff)) + geom_abline(slope = 0, intercept = mean(Wide.Tech.Returns$diff), color = "red") + ggtitle("Technology") + ylim(c(-1,1)) + ylab("Monthly Difference in  Returns %") + xlab("") + scale_x_date(date_labels = "%Y", date_breaks = "2 years") + xlab("")
+```
+
+
+#Summary of Mean Differences 
+
+Here I calculated the mean difference over the 14 years studied and put it into a table. 
+
+```{r}
+
+#Calcualte Mean 
+
+CD.mean <- as.numeric(Wide.CD.Returns %>% summarize(mean = mean(diff)))
+CND.Mean <-as.numeric(Wide.CND.Returns %>% summarize(mean = mean(diff)))
+CS.Mean <- as.numeric(Wide.CS.Returns %>% summarize(mean = mean(diff)))
+F.Mean <- as.numeric(Wide.F.Returns %>% summarize(mean = mean(diff)))
+M.Mean <- as.numeric(Wide.M.Returns %>% summarize(mean = mean(diff)))
+Tech.Mean <- as.numeric(Wide.Tech.Returns %>% summarize(mean = mean(diff)))
+
+# Calculating Mean Difference
+
+CD.mean.d <- as.numeric(Wide.CD.Returns %>% summarize(mean = mean(diff)))
+CND.Mean.d<-as.numeric(Wide.CND.Returns %>% summarize(mean = mean(diff)))
+CS.Mean.d <- as.numeric(Wide.CS.Returns %>% summarize(mean = mean(diff)))
+F.Mean.d <- as.numeric(Wide.F.Returns %>% summarize(mean = mean(diff)))
+M.Mean.d <- as.numeric(Wide.M.Returns %>% summarize(mean = mean(diff)))
+Tech.Mean.d <- as.numeric(Wide.Tech.Returns %>% summarize(mean = mean(diff)))
+
+#Putting into table format
+
+tibble( 
+  Sector = unique(Companies.Table.Final$sector),
+  Mean.Difference = c(CD.mean,CND.Mean,CS.Mean,F.Mean,M.Mean,Tech.Mean))
+
+tibble( 
+  Sector = "Overall",
+  Mean.Difference = mean(Wide.Total.Returns$diff))
+```
+
+
+# Summary of Modeling 
+
+I decided to fit a model to just the returns for even and dual, rather than across sectors.
+
+After attempting to fit models from the SARIMA family, using yearly differencing, it became clear that GARCH models were likely necessary to proporly model the volality in the combined returns. 
+
+I began by observing the squared residuals of fitting an ARIMA(1,1). There was clearly remaining autcorrelation, which implied non-constant conditional variance - confirming the necessity of a GARCH model. 
+
+After fitting the ARMA(1,0) - GARCH(1,0) model, all but one of the coefficients were significant at the five percent level. Futhermore, none of the residual statistics show any problems. 
+
+The next year forecasts are provided. 
+
+```{r}
+
+library(astsa) 
+library(fGarch)
+
+
+#Observe Nature of residuals
+
+ret.E <- Total.Returns.Even$returns.EVEN
+u = resid(sarima(ret.E,1,0,1,details = FALSE)$fit)
+acf2(u^2,main = "Res^2 of ARMA(1,1) on Even Returns")
+
+#Summary of the Model Fit
+summary(mod1<- garchFit(~arma(1,0) + garch(1,0), data = ret.E))
+
+#Build forcast
+
+pred1 <- predict(mod1,n.ahead = 12)$meanForecast
+```
+
+
+
+
+After fitting the ARMA(1,0) - GARCH(1,0) model, all of the coefficients were significant at the five percent level. Futhermore, none of the residual statistics show any problems. 
+
+The next year forecasts are provided. 
+
+```{r}
+
+#Observe Nature of residuals 
+
+ret.U <- Total.Returns.Dual$returns.UNEVEN
+u = resid(sarima(ret.E,1,0,0,details = FALSE)$fit)
+acf2(u^2, main = "Res^2 of fitting AR(1,0) to Uneven Returns")
+
+#Summary of the Model Fit
+summary(mod2<- garchFit(~arma(1,0) + garch(1,0), data = ret.U))
+
+
+pred2 <- predict(mod2,n.ahead = 12)$meanForecast
+```
+
+
+
+
+
+
+```{r}
+
+#Create Date Frame of Predicted Values 
+
+month <- rep(1:12)
+pred <- as.data.frame(cbind(pred1,pred2,month)) %>% gather(key = "Structure", value = "Predicted.Value", 1:2  )
+
+pred$Structure <-str_replace(pred$Structure, "pred1" , "Even")
+pred$Structure <-str_replace(pred$Structure, "pred2" , "Uneven")
+
+
+ggplot(pred, aes(month,Predicted.Value, color = Structure)) + geom_point() + geom_line() + ggtitle("2019 Monthly Returns Forecast") + ylab("") + xlab("Month") + scale_x_continuous(breaks = 1:12)
+
+```
+
+They both tail off. 
+
+```{r}
+# Fitting ARIMA(1,0,1)
+
+acf2(ret.E)
+acf2(ret.U)
+
+```
+
+```{r}
+# Fitting the Model 
+
+sarima(ret.E,1,0,1)
+
+sarima(ret.U,1,0,1)
+```
+
+```{r}
+# Forcasting 
+
+sarima.for(ret.E,12,1,0,1)
+
+sarima.for(ret.U,12,1,0,1)
+```
+
+
+
